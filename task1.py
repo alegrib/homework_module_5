@@ -9,15 +9,15 @@ import torch
 
 def DataPreprocess(txt_path):
     with open(txt_path, encoding='utf-8') as txt_file:
-        text = txt_file.read()  # .lower()
-    text = re.sub(r"[^а-яА-Я0-9.!?,:]+", r" ", text)
+        text = txt_file.read()
+    text = re.sub(r"[^а-яА-Я0-9.!?,:—()-]+", r" ", text)
     text = text.replace('ё', 'е')
     text = re.sub('\s+', ' ', text)
     txt_file.close()
     return text
 
 
-class Alphabet(object):
+class LettersList(object):
 
     def __init__(self):
         self.letters = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ0123456789"
@@ -45,7 +45,6 @@ class Alphabet(object):
 class Encrypt(object):
     def __init__(self):
         super().__init__()
-        #self.key = key
 
     def encrypt(self, input_text, key):
         res, n = [], ""
@@ -75,15 +74,15 @@ class Encrypt(object):
 
 class SentenceDataset(torch.utils.data.Dataset):
 
-    def __init__(self, raw_data, alphabet, key):
+    def __init__(self, raw_data, letters, key):
         super().__init__()
         self.DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self._len = len(raw_data)
         self.y = torch.tensor(
-            [[alphabet[ch] for ch in line] for line in raw_data]
+            [[letters[ch] for ch in line] for line in raw_data]
         ).to(self.DEVICE)
         self.x_str = [Encrypt().encrypt(line, key) for line in raw_data]
-        self.x = torch.tensor([[alphabet[ch] for ch in line] for line in self.x_str]).to(self.DEVICE)
+        self.x = torch.tensor([[letters[ch] for ch in line] for line in self.x_str]).to(self.DEVICE)
 
     def __len__(self):
         return self._len
@@ -94,11 +93,11 @@ class SentenceDataset(torch.utils.data.Dataset):
 
 class RNNModel(torch.nn.Module):
 
-    def __init__(self, ALPHABET, CAESAR_OFFSET):
+    def __init__(self, letters_list, offset):
         super().__init__()
-        self.embed = torch.nn.Embedding(len(ALPHABET) + CAESAR_OFFSET, 32)
+        self.embed = torch.nn.Embedding(len(letters_list) + offset, 32)
         self.rnn = torch.nn.RNN(32, 128, batch_first=True)
-        self.linear = torch.nn.Linear(128, len(ALPHABET) + CAESAR_OFFSET)
+        self.linear = torch.nn.Linear(128, len(letters_list) + offset)
 
     def forward(self, sentence, state=None):
         embed = self.embed(sentence)
@@ -107,14 +106,14 @@ class RNNModel(torch.nn.Module):
 
 
 class CAESAR(object):
-    def __init__(self, FILE_NAME, CAESAR_OFFSET):
+    def __init__(self, train_file, offset):
         self.BATCH_SIZE = 10
         self.STRING_SIZE = 60
-        self.FILE_NAME = FILE_NAME
+        self.train_file = train_file
         self.DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.CAESAR_OFFSET = CAESAR_OFFSET
-        self.text = DataPreprocess(self.FILE_NAME)
-        self.ALPHABET = Alphabet().load_from_file(self.FILE_NAME)
+        self.offset = offset
+        self.text = DataPreprocess(self.train_file)
+        self.letters_list = LettersList().load_from_file(self.train_file)
 
     def get_text_array(self, text):
         MAX_LEN = 100
@@ -135,7 +134,7 @@ class CAESAR(object):
 
         train = torch.utils.data.DataLoader(
             SentenceDataset(
-                train_data, self.ALPHABET, self.CAESAR_OFFSET
+                train_data, self.letters_list, self.offset
             ),
             batch_size=self.BATCH_SIZE,
             shuffle=True,
@@ -143,7 +142,7 @@ class CAESAR(object):
         )
         test = torch.utils.data.DataLoader(
             SentenceDataset(
-                test_data, self.ALPHABET, self.CAESAR_OFFSET
+                test_data, self.letters_list, self.offset
             ),
             batch_size=self.BATCH_SIZE,
             shuffle=True,
@@ -152,7 +151,7 @@ class CAESAR(object):
         return train, test
 
     def model(self, TEST_FILE_NAME):
-        model = RNNModel(self.ALPHABET, self.CAESAR_OFFSET).to(self.DEVICE)
+        model = RNNModel(self.letters_list, self.offset).to(self.DEVICE)
         loss = torch.nn.CrossEntropyLoss().to(self.DEVICE)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
 
@@ -166,7 +165,7 @@ class CAESAR(object):
                 x_in = x_in
                 y_in = y_in.view(1, -1).squeeze()
                 optimizer.zero_grad()
-                out = model.forward(x_in).view(-1, len(self.ALPHABET) + self.CAESAR_OFFSET)
+                out = model.forward(x_in).view(-1, len(self.letters_list) + self.offset)
                 l = loss(out, y_in)
                 train_loss += l.item()
                 batch_acc = (out.argmax(dim=1) == y_in)
@@ -184,7 +183,7 @@ class CAESAR(object):
             for x_in, y_in in test:
                 x_in = x_in
                 y_in = y_in.view(1, -1).squeeze()
-                out = model.forward(x_in).view(-1, len(self.ALPHABET) + self.CAESAR_OFFSET)
+                out = model.forward(x_in).view(-1, len(self.letters_list) + self.offset)
                 l = loss(out, y_in)
                 test_loss += l.item()
                 batch_acc = (out.argmax(dim=1) == y_in)
@@ -196,10 +195,10 @@ class CAESAR(object):
             )
 
         sentence = DataPreprocess(TEST_FILE_NAME)
-        encrypted_sentence_idx = [self.ALPHABET[i] for i in Encrypt().encrypt(sentence, self.CAESAR_OFFSET)]
-        encrypted_sentence = "".join([self.ALPHABET[i] for i in encrypted_sentence_idx])
+        encrypted_sentence_idx = [self.letters_list[i] for i in Encrypt().encrypt(sentence, self.offset)]
+        encrypted_sentence = "".join([self.letters_list[i] for i in encrypted_sentence_idx])
         result = model(torch.tensor([encrypted_sentence_idx])).to(self.DEVICE).argmax(dim=2)
-        deencrypted_sentence = "".join([self.ALPHABET[i.item()] for i in result.flatten()])
+        deencrypted_sentence = "".join([self.letters_list[i.item()] for i in result.flatten()])
         print(f"Encrypted sentence is : {encrypted_sentence}")
         print(f"Deencrypted sentence is : {deencrypted_sentence}")
 
