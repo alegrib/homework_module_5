@@ -98,9 +98,10 @@ class RNNModel(torch.nn.Module):
         self.embed = torch.nn.Embedding(len(letters_list) + offset, 32)
         self.rnn = torch.nn.RNN(32, 128, batch_first=True)
         self.linear = torch.nn.Linear(128, len(letters_list) + offset)
+        self.DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     def forward(self, sentence, state=None):
-        embed = self.embed(sentence)
+        embed = self.embed(sentence.to(self.DEVICE))
         o, h = self.rnn(embed)
         return self.linear(o)
 
