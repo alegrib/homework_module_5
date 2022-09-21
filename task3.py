@@ -266,10 +266,18 @@ class TranslatorModel(object):
             pair = random.choice(self.pairs)
             print('Input sentence in belarusian language: ', pair[0])
             print('Real sentence: ', pair[1])
+            val_pairs = self.pre_data.tensorsFromPair(pair, self.input_lang, self.output_lang)
             output_words = self.evaluate(encoder, decoder, pair[0])
             output_sentence = ' '.join(output_words)
+            indexes = torch.tensor([self.output_lang.word2index[word] for word in output_sentence.replace(' <EOS>', '').split(' ')], dtype=torch.long,device=device).view(-1, 1)
+            k = val_pairs[1][:val_pairs[1].size(0) - 1]
+            indexes = F.pad(indexes, pad=(0, 0, 0, max(indexes.size(0), k.size(0)) - indexes.size(0)), mode='constant', value=0)
+            val_pairs_pad = F.pad(k, pad=(0, 0, 0, max(indexes.size(0), k.size(0)) - k.size(0)), mode='constant', value=0)
             print('Translated sentence: ', output_sentence)
             print('')
+            val_acc = (indexes == val_pairs_pad).flatten()
+            val_acc = (val_acc.sum() / val_acc.shape[0]).item()
+            print(f"Accuracy: {val_acc:.4f}")
 
     def modeltesting(self):
         encoder1 = EncoderRNN(self.input_lang.n_words, 256).to(device)
