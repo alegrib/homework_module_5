@@ -152,7 +152,9 @@ class Model(object):
         print("Real Y sequence: ", y_val)
         y_pred = model(torch.tensor(x_val)).to(DEVICE).argmax(dim=1)
         print("Predicted Y sequence: ", y_pred)
-
+        val_acc = (y_pred == y_val.to(DEVICE)).flatten()
+        val_acc = (val_acc.sum() / val_acc.shape[0]).item()
+        print(f"Accuracy: {val_acc:.4f}")
 
 if __name__ == '__main__':
     parser = createParser()

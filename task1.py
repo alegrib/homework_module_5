@@ -43,8 +43,6 @@ class LettersList(object):
 
 
 class Encrypt(object):
-    def __init__(self):
-        super().__init__()
 
     def encrypt(self, input_text, key):
         res, n = [], ""
@@ -196,12 +194,16 @@ class CAESAR(object):
             )
 
         sentence = DataPreprocess(TEST_FILE_NAME)
+        sentence_idx = torch.tensor([self.letters_list[ch] for ch in sentence]).to(self.DEVICE)
         encrypted_sentence_idx = [self.letters_list[i] for i in Encrypt().encrypt(sentence, self.offset)]
         encrypted_sentence = "".join([self.letters_list[i] for i in encrypted_sentence_idx])
         result = model(torch.tensor([encrypted_sentence_idx])).to(self.DEVICE).argmax(dim=2)
+        val_acc = (result == sentence_idx.to(self.DEVICE)).flatten()
+        val_acc = (val_acc.sum() / val_acc.shape[0]).item()
         deencrypted_sentence = "".join([self.letters_list[i.item()] for i in result.flatten()])
         print(f"Encrypted sentence is : {encrypted_sentence}")
         print(f"Deencrypted sentence is : {deencrypted_sentence}")
+        print(f"Accuracy: {val_acc:.4f}")
 
 
 if __name__ == '__main__':
